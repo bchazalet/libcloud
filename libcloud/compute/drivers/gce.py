@@ -3579,7 +3579,7 @@ class GCENodeDriver(NodeDriver):
 
     def ex_create_instancegroupmanager(self, name, zone, template, size,
                                        base_instance_name=None,
-                                       description=None):
+                                       description=None, region):
         """
         Create a Managed Instance Group.
 
@@ -3603,11 +3603,18 @@ class GCENodeDriver(NodeDriver):
         :return:  An Instance Group Manager object.
         :rtype:   :class:`GCEInstanceGroupManager`
         """
-        zone = zone or self.zone
-        if not hasattr(zone, 'name'):
-            zone = self.ex_get_zone(zone)
+        if region:
+            # we're creating a regional MIG
+            # TODO support selected zones within region
+            request = '/regions/%s/instanceGroupManagers' % (zone.name)
 
-        request = '/zones/%s/instanceGroupManagers' % (zone.name)
+        else:
+            # we're creating a zonal MIG
+            zone = zone or self.zone
+            if not hasattr(zone, 'name'):
+                zone = self.ex_get_zone(zone)
+
+            request = '/zones/%s/instanceGroupManagers' % (zone.name)
 
         manager_data = {}
 
@@ -3628,7 +3635,7 @@ class GCENodeDriver(NodeDriver):
         self.connection.async_request(request, method='POST',
                                       data=manager_data)
 
-        return self.ex_get_instancegroupmanager(name, zone)
+        return self.ex_get_instancegroupmanager(name, zone, region)
 
     def ex_create_route(self, name, dest_range, priority=500,
                         network="default", tags=None, next_hop=None,
@@ -7527,7 +7534,7 @@ class GCENodeDriver(NodeDriver):
         response = self.connection.request(request, method='GET').object
         return self._to_urlmap(response)
 
-    def ex_get_instancegroup(self, name, zone=None):
+    def ex_get_instancegroup(self, name, zone=None, region=None):
         """
         Returns the specified Instance Group. Get a list of available instance
         groups by making a list() request.
@@ -7547,9 +7554,15 @@ class GCENodeDriver(NodeDriver):
         :return:  `GCEInstanceGroup` object.
         :rtype:   :class:`GCEInstanceGroup`
         """
-        zone = self._set_zone(zone) or self._find_zone_or_region(
-            name, 'instanceGroups', region=False, res_name='Instancegroup')
-        request = "/zones/%s/instanceGroups/%s" % (zone.name, name)
+        if region:
+            region = self._set_region(region) or self._find_zone_or_region(
+                name, 'instanceGroups', region=True, res_name='Instancegroup')
+            request = "/regions/%s/instanceGroups/%s" % (region.name, name)
+        else:
+            zone = self._set_zone(zone) or self._find_zone_or_region(
+                name, 'instanceGroups', region=False, res_name='Instancegroup')
+            request = "/zones/%s/instanceGroups/%s" % (zone.name, name)
+
         response = self.connection.request(request, method='GET').object
 
         return self._to_instancegroup(response)
